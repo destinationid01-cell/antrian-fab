@@ -352,6 +352,8 @@ var LS_ADMIN = "antrian_fab_admin_v1";
 
 var mode = "demo";           // 'demo' | 'supabase'
 var sb = null;
+var sbSubscribed = false;
+var sbRetryTimer = null;
 var items = [];              // antrian hari ini (sudah difilter tanggal)
 var settings = { start_time: CFG.START_TIME || "08:00", end_time: CFG.END_TIME || "16:00", default_minutes: CFG.DEFAULT_MINUTES || 10 };
 var adminLogged = sessionStorage.getItem(LS_ADMIN) === "1";
@@ -443,6 +445,7 @@ async function sbSaveSettings(){
   catch(e){ /* abaikan: tabel settings opsional */ }
 }
 function sbSubscribe(){
+  if(sbSubscribed) return; sbSubscribed=true;
   try{
     sb.channel("antrian-fab")
       .on("postgres_changes",{event:"*",schema:"public",table:"queue"},function(){ sbLoad().then(render).catch(function(){}); })
@@ -684,6 +687,35 @@ function tick(){
 }
 setInterval(tick, 1000); tick();
 
+/* ---------- koneksi Supabase dengan percobaan ulang ----------
+   DNS/jaringan kadang gagal sesaat (Failed to fetch) lalu bisa lagi.
+   Jangan langsung menyerah ke Mode Demo: coba 3x, lalu tetap coba
+   lagi tiap 30 detik di latar belakang + tombol manual di banner. */
+function connectSupabase(attempt){
+  attempt=attempt||1;
+  return sbLoad().then(function(){
+    mode="supabase";
+    if(sbRetryTimer){ clearInterval(sbRetryTimer); sbRetryTimer=null; }
+    $("demoBanner").classList.remove("show");
+    sbSubscribe(); render(); route();
+  }).catch(function(err){
+    console.warn("Supabase gagal (percobaan "+attempt+"):", err);
+    if(attempt<3){
+      setTimeout(function(){ connectSupabase(attempt+1); }, 2000);
+    } else {
+      mode="demo"; demoLoad(); render(); route();
+      var b=$("demoBanner");
+      b.innerHTML="⚠️ Supabase gagal dimuat ("+esc(err&&err.message?err.message:"")+") — berjalan dalam Mode Demo. <button type=\"button\" id=\"btnRetrySb\" style=\"margin-left:8px;border:none;border-radius:999px;background:#EA580C;color:#fff;font-weight:700;padding:6px 12px;cursor:pointer\">🔄 Coba hubungkan lagi</button>";
+      b.classList.add("show");
+      var rb=$("btnRetrySb");
+      if(rb) rb.addEventListener("click", function(){ b.innerHTML="⏳ Menghubungkan ke Supabase..."; connectSupabase(1); });
+      if(!sbRetryTimer){
+        sbRetryTimer=setInterval(function(){ if(mode==="demo") connectSupabase(1); }, 30000);
+      }
+    }
+  });
+}
+
 /* ---------- init ---------- */
 (function init(){
   var sel=$("inProdi");
@@ -693,11 +725,7 @@ setInterval(tick, 1000); tick();
     try{
       sb=window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
       mode="supabase";
-      sbLoad().then(function(){ sbSubscribe(); render(); route(); }).catch(function(err){
-        console.warn("Supabase gagal, kembali ke Mode Demo:", err);
-        mode="demo"; demoLoad(); render(); route();
-        var b=$("demoBanner"); b.innerHTML="⚠️ Supabase gagal dimuat ("+esc(err&&err.message?err.message:"")+") — berjalan dalam Mode Demo."; b.classList.add("show");
-      });
+      connectSupabase(1);
     }catch(err){ mode="demo"; demoLoad(); render(); route(); }
   } else {
     mode="demo"; demoLoad();
