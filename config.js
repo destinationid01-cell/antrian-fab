@@ -20,7 +20,7 @@ window.ANTRIAN_CONFIG = {
   // Sistem sederhana ini BUKAN untuk data sensitif. Untuk keamanan
   // serius, gunakan Supabase Auth + Row Level Security.
   ADMIN_USERNAME: "admin",
-  ADMIN_PASSWORD: "admin123",
+  ADMIN_PASSWORD: "HumasFAB123",
 
   // --- Pengaturan awal pelayanan ---
   START_TIME: "08:00", // Jam Mulai Pelayanan (format HH:MM, WIB)
