@@ -28,6 +28,7 @@ create index if not exists queue_status_idx on public.queue (status);
 create table if not exists public.settings (
   id text primary key,
   start_time text not null default '08:00',
+  end_time text not null default '16:00',
   default_minutes int not null default 10,
   updated_at timestamptz not null default now()
 );
@@ -35,6 +36,11 @@ create table if not exists public.settings (
 insert into public.settings (id, start_time, default_minutes)
 values ('main', '08:00', 10)
 on conflict (id) do nothing;
+
+-- Batas jam layanan: estimasi dibatasi sampai 16:00 WIB.
+-- Jalankan ini juga bila tabel settings sudah dibuat sebelumnya.
+alter table public.settings add column if not exists end_time text not null default '16:00';
+update public.settings set end_time='16:00' where id='main' and (end_time is null or end_time='');
 
 -- ============================================================
 -- Row Level Security (RLS)

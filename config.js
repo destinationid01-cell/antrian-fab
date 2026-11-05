@@ -24,6 +24,7 @@ window.ANTRIAN_CONFIG = {
 
   // --- Pengaturan awal pelayanan ---
   START_TIME: "08:00", // Jam Mulai Pelayanan (format HH:MM, WIB)
+  END_TIME: "16:00", // Jam Selesai Pelayanan — estimasi dibatasi sampai jam ini
   DEFAULT_MINUTES: 10, // Menit Default per Orang
 
   // --- Daftar prodi (dropdown form) ---

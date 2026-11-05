@@ -124,7 +124,7 @@ tr.serving-row td:first-child{border-left:4px solid var(--orange)}
 .btn-call{background:var(--orange)} .btn-done{background:var(--green)}
 .btn-skip{background:#6B7280} .btn-del{background:#B91C1C}
 .dur-input{width:64px;border:1.5px solid #FDBA74;border-radius:8px;padding:6px 8px;text-align:center}
-.settings-grid{display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end}
+.settings-grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end}
 .login-card{max-width:420px;margin:0 auto}
 .login-card input{width:100%;border:1.5px solid #FDBA74;border-radius:12px;padding:11px 13px;background:#FFFBEB}
 .login-err{display:none;color:var(--red);font-size:13px;margin-top:8px}
@@ -178,6 +178,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin:28px 0 10px;pa
       <p>UIN Raden Mas Said Surakarta &middot; Bagian Tata Usaha &middot; <span id="todayLabel"></span></p>
       <div class="chips">
         <span class="chip">🕐 Mulai <b id="chipStart">08:00</b> WIB</span>
+        <span class="chip">🏁 Selesai <b id="chipEnd">16:00</b> WIB</span>
         <span class="chip">⏱️ <b id="chipMinutes">10</b> menit / orang</span>
         <span class="chip">👥 <b id="chipWaiting">0</b> menunggu</span>
       </div>
@@ -216,7 +217,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin:28px 0 10px;pa
         <button class="btn btn-ghost btn-sm" id="btnRefresh" type="button">🔄 Refresh</button>
         <button class="btn btn-ghost btn-sm" id="btnSample" type="button" style="display:none">Isi 3 contoh</button>
       </div>
-      <p class="sub">Estimasi dihitung otomatis dari jam mulai pelayanan + durasi orang-orang di depan Anda. Jika admin mengubah durasi, estimasi di bawah ikut bergeser.</p>
+      <p class="sub">Estimasi dihitung otomatis dari jam mulai pelayanan + durasi orang-orang di depan Anda. Jika admin mengubah durasi, estimasi di bawah ikut bergeser. Layanan <b id="hoursLabel">08:00–16:00 WIB</b> — estimasi dibatasi sampai 16:00, antrian hari ini ditutup bila sudah penuh sampai jam itu.</p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -300,10 +301,11 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin:28px 0 10px;pa
         <form id="settingsForm" style="margin-top:16px">
           <div class="settings-grid">
             <div class="field"><label>Jam Mulai Pelayanan</label><input type="time" id="setStart" value="08:00"></div>
+            <div class="field"><label>Jam Selesai Pelayanan</label><input type="time" id="setEnd" value="16:00"></div>
             <div class="field"><label>Menit Default per Orang</label><input type="number" id="setMinutes" min="1" max="120" value="10"></div>
             <button class="btn btn-orange" type="submit">Simpan Pengaturan</button>
           </div>
-          <p class="muted" style="margin-top:10px">Mengubah jam mulai / menit default akan menggeser estimasi semua antrian yang masih menunggu. Durasi tiap orang juga bisa diubah langsung di tabel bawah.</p>
+          <p class="muted" style="margin-top:10px">Mengubah jam mulai / menit default akan menggeser estimasi semua antrian yang masih menunggu. Durasi tiap orang juga bisa diubah langsung di tabel bawah. Pendaftaran baru ditolak bila estimasi selesainya melewati Jam Selesai.</p>
         </form>
       </section>
 
@@ -351,7 +353,7 @@ var LS_ADMIN = "antrian_fab_admin_v1";
 var mode = "demo";           // 'demo' | 'supabase'
 var sb = null;
 var items = [];              // antrian hari ini (sudah difilter tanggal)
-var settings = { start_time: CFG.START_TIME || "08:00", default_minutes: CFG.DEFAULT_MINUTES || 10 };
+var settings = { start_time: CFG.START_TIME || "08:00", end_time: CFG.END_TIME || "16:00", default_minutes: CFG.DEFAULT_MINUTES || 10 };
 var adminLogged = sessionStorage.getItem(LS_ADMIN) === "1";
 
 /* ---------- util ---------- */
@@ -383,6 +385,17 @@ function computeEstimates(list, st){
   });
   return map;
 }
+/* Batas jam layanan: orang baru hanya boleh daftar bila selesai
+   paling lambat jam selesai (default 16:00). Contoh: mulai 08:00,
+   10 mnt/orang -> kapasitas 48 orang, terakhir mulai 15:50. */
+function nextEstimate(){
+  var cum=parseTime(settings.start_time);
+  items.slice().sort(sortItems).forEach(function(it){
+    if(it.status==="Menunggu"||it.status==="Dilayani") cum+=parseInt(it.duration_minutes,10)||settings.default_minutes||10;
+  });
+  var finish=cum+(settings.default_minutes||10);
+  return {start:cum, finish:finish, ok:finish<=parseTime(settings.end_time||"16:00")};
+}
 function nextQueueNumber(){
   var max=0;
   items.forEach(function(it){ var n=parseInt(String(it.queue_number).split("-")[1],10); if(!isNaN(n)&&n>max) max=n; });
@@ -393,7 +406,7 @@ function nextQueueNumber(){
 function demoLoad(){
   try{ items=JSON.parse(localStorage.getItem(LS_QUEUE)||"[]"); }catch(e){ items=[]; }
   items=items.filter(function(it){ return isToday(it.created_at); });
-  try{ var s=JSON.parse(localStorage.getItem(LS_SETTINGS)||"null"); if(s&&s.start_time) settings=s; }catch(e){}
+  try{ var s=JSON.parse(localStorage.getItem(LS_SETTINGS)||"null"); if(s&&s.start_time){ settings={start_time:s.start_time, end_time:s.end_time||"16:00", default_minutes:s.default_minutes||10}; } }catch(e){}
 }
 function demoSave(){
   try{ localStorage.setItem(LS_QUEUE, JSON.stringify(items)); }catch(e){}
@@ -408,7 +421,7 @@ async function sbLoad(){
   items=(res.data||[]).filter(function(it){ return isToday(it.created_at); });
   try{
     var sres=await sb.from("settings").select("*").eq("id","main").maybeSingle();
-    if(!sres.error && sres.data && sres.data.start_time) settings={start_time:sres.data.start_time, default_minutes:sres.data.default_minutes};
+    if(!sres.error && sres.data && sres.data.start_time) settings={start_time:sres.data.start_time, end_time:sres.data.end_time||"16:00", default_minutes:sres.data.default_minutes};
   }catch(e){ /* tabel settings belum dibuat -> pakai pengaturan lokal */ }
 }
 async function sbAdd(item){
@@ -426,7 +439,7 @@ async function sbDelete(id){
   items=items.filter(function(x){return x.id!==id;});
 }
 async function sbSaveSettings(){
-  try{ await sb.from("settings").upsert({id:"main", start_time:settings.start_time, default_minutes:settings.default_minutes, updated_at:new Date().toISOString()}); }
+  try{ await sb.from("settings").upsert({id:"main", start_time:settings.start_time, end_time:settings.end_time, default_minutes:settings.default_minutes, updated_at:new Date().toISOString()}); }
   catch(e){ /* abaikan: tabel settings opsional */ }
 }
 function sbSubscribe(){
@@ -469,6 +482,8 @@ function render(){
   var skipped=list.filter(function(i){return i.status==="Lewat";});
 
   $("chipStart").textContent=settings.start_time;
+  $("chipEnd").textContent=settings.end_time||"16:00";
+  $("hoursLabel").textContent=settings.start_time+"–"+(settings.end_time||"16:00")+" WIB";
   $("chipMinutes").textContent=settings.default_minutes;
   $("chipWaiting").textContent=waiting.length;
   $("todayLabel").textContent=new Date().toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
@@ -532,6 +547,7 @@ function render(){
   }
   // Isi form pengaturan admin
   $("setStart").value=settings.start_time;
+  $("setEnd").value=settings.end_time||"16:00";
   $("setMinutes").value=settings.default_minutes;
 }
 
@@ -564,6 +580,11 @@ $("joinForm").addEventListener("submit", async function(e){
   setInvalid("f-prodi", !prodi); if(!prodi) ok=false;
   setInvalid("f-phone", !validPhone(phone)); if(!validPhone(phone)) ok=false;
   if(!ok) return;
+  var ne=nextEstimate();
+  if(!ne.ok){
+    alert("Antrian hari ini sudah penuh. Estimasi pelayanan sudah sampai "+(settings.end_time||"16:00")+" WIB. Silakan datang besok.");
+    return;
+  }
   var item={
     id:(window.crypto&&crypto.randomUUID)?crypto.randomUUID():("id-"+Date.now()+"-"+Math.floor(Math.random()*1e6)),
     queue_number:nextQueueNumber(), name:name, nim:nim, prodi:prodi,
@@ -624,9 +645,11 @@ $("adminBody").addEventListener("change", async function(e){
 $("settingsForm").addEventListener("submit", async function(e){
   e.preventDefault();
   var st=$("setStart").value||"08:00";
+  var en=$("setEnd").value||"16:00";
   var mn=parseInt($("setMinutes").value,10);
   if(isNaN(mn)||mn<1||mn>120){ alert("Menit default 1–120."); return; }
-  settings={start_time:st, default_minutes:mn};
+  if(parseTime(en)<=parseTime(st)){ alert("Jam Selesai harus lebih dari Jam Mulai."); return; }
+  settings={start_time:st, end_time:en, default_minutes:mn};
   try{ await saveSettings(); alert("Pengaturan tersimpan. Estimasi semua antrian menunggu ikut bergeser."); }
   catch(err){ alert("Gagal menyimpan pengaturan: "+(err&&err.message?err.message:err)); }
 });
