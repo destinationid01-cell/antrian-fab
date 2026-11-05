@@ -66,6 +66,14 @@ create policy "settings_public_all" on public.settings
 -- mengubah durasi / memanggil antrian, tanpa perlu refresh.
 -- Supabase Dashboard → Database → Replication: pastikan tabel
 -- public.queue dan public.settings tercantum, ATAU jalankan:
--- ============================================================
-alter publication supabase_realtime add table public.queue;
-alter publication supabase_realtime add table public.settings;
+-- (blok DO di bawah aman dijalankan berulang — tidak error
+--  "already member of publication" seperti alter publication biasa)
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='queue') then
+    alter publication supabase_realtime add table public.queue;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='settings') then
+    alter publication supabase_realtime add table public.settings;
+  end if;
+end $$;
